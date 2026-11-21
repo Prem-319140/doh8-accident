@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แดชบอร์ดสถิติอุบัติเหตุ สทล.8</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: 'Prompt', sans-serif; background-color: #f1f5f9; }
+    #map { height: 460px; width: 100%; border-radius: 0.75rem; z-index: 1; }
+    .leaflet-popup-content-wrapper { border-radius: 0.75rem; font-family: 'Prompt', sans-serif; }
+    .custom-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased">
+
+  <!-- แถบหัวเว็บ -->
+  <header class="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white shadow-lg sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-amber-400 text-slate-900 flex items-center justify-center font-bold text-lg shadow shrink-0">
+          ทล.8
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-semibold tracking-tight">ระบบติดตามและสรุปสถิติอุบัติเหตุทางถนน</h1>
+          <p class="text-xs sm:text-sm text-blue-200">สำนักงานทางหลวงที่ 8 (มหาสารคาม) • อัปเดตอัตโนมัติจากรายงานกลุ่ม LINE</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2.5">
+        <span id="lastUpdate" class="text-xs text-slate-300 bg-white/10 px-3 py-1.5 rounded-full">กำลังโหลดข้อมูล...</span>
+        <button onclick="exportExcel()" class="bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition text-white text-xs sm:text-sm font-medium px-3.5 py-2 rounded-lg shadow flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+          ส่งออก Excel
+        </button>
+        <button onclick="loadData()" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition text-white text-xs sm:text-sm font-medium px-4 py-2 rounded-lg shadow flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          รีเฟรช
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- แถบตัวกรองข้อมูล (แยก ปี พ.ศ. / เดือนไทย / วัน) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
+        <div class="col-span-2 sm:col-span-1">
+          <label class="block text-xs font-medium text-slate-500 mb-1">แขวงทางหลวง</label>
+          <select id="filterDistrict" onchange="applyFilters()" class="w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+            <option value="">ทุกแขวงทางหลวง</option>
+          </select>
+        </div>
+        <div class="col-span-2 sm:col-span-1">
+          <label class="block text-xs font-medium text-slate-500 mb-1">หมายเลขทางหลวง</label>
+          <select id="filterHighway" onchange="applyFilters()" class="w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+            <option value="">ทุกสายทาง</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">ปี (พ.ศ.)</label>
+          <select id="filterYear" onchange="applyFilters()" class="w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+            <option value="">ทุกปี</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">เดือน</label>
+          <select id="filterMonth" onchange="applyFilters()" class="w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+            <option value="">ทุกเดือน</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">วัน</label>
+          <select id="filterDay" onchange="applyFilters()" class="w-full rounded-lg border-slate-300 border px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50">
+            <option value="">ทุกวัน</option>
+          </select>
+        </div>
+        <div>
+          <button onclick="resetFilters()" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm py-2 px-4 rounded-lg transition">
+            ล้างตัวกรอง
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- การ์ดสรุปตัวเลข KPI 4 ช่อง -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 border-l-4 border-l-blue-600">
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">อุบัติเหตุทั้งหมด</p>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiTotal" class="text-3xl sm:text-4xl font-bold text-slate-900">0</span>
+          <span class="text-xs sm:text-sm text-slate-400">ครั้ง</span>
+        </div>
+        <p id="kpiWithCoord" class="text-xs text-blue-600 mt-1">มีพิกัดแผนที่ 0 จุด</p>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 border-l-4 border-l-amber-500">
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">ผู้บาดเจ็บสะสม</p>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiInjured" class="text-3xl sm:text-4xl font-bold text-amber-600">0</span>
+          <span class="text-xs sm:text-sm text-slate-400">ราย</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">จากรายงานที่กรองอยู่</p>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 border-l-4 border-l-red-600">
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">ผู้เสียชีวิตสะสม</p>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiFatalities" class="text-3xl sm:text-4xl font-bold text-red-600">0</span>
+          <span class="text-xs sm:text-sm text-slate-400">ราย</span>
+        </div>
+        <p id="kpiFatalCases" class="text-xs text-red-500 mt-1">เหตุที่มีผู้เสียชีวิต 0 ครั้ง</p>
+      </div>
+
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 border-l-4 border-l-indigo-600">
+        <p class="text-xs sm:text-sm text-slate-500 font-medium">สายทางที่เกิดเหตุสูงสุด</p>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiTopHw" class="text-2xl sm:text-3xl font-bold text-indigo-700">-</span>
+        </div>
+        <p id="kpiTopHwCount" class="text-xs text-slate-400 mt-1">0 ครั้ง</p>
+      </div>
+    </section>
+
+    <!-- แผนที่ + กราฟสรุป -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div>
+            <h2 class="text-base font-semibold text-slate-800">แผนที่จุดเกิดอุบัติเหตุ</h2>
+            <p class="text-xs text-slate-500">คลิกที่หมุดเพื่อดูรายละเอียดและเปิดนำทางใน Google Maps</p>
+          </div>
+          <div class="flex items-center gap-3 text-xs">
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-600 inline-block"></span>เสียชีวิต</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span>บาดเจ็บ</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-600 inline-block"></span>ไม่มีผู้บาดเจ็บ</span>
+          </div>
+        </div>
+        <div id="map"></div>
+      </div>
+
+      <div class="space-y-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+          <h2 class="text-sm font-semibold text-slate-800 mb-3">สัดส่วนอุบัติเหตุแยกตามแขวงทางหลวง</h2>
+          <div class="relative h-56 w-full">
+            <canvas id="districtChart"></canvas>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+          <h2 class="text-sm font-semibold text-slate-800 mb-3">อันดับสายทางที่เกิดเหตุสูงสุด</h2>
+          <div class="relative h-52 w-full">
+            <canvas id="highwayChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ตารางรายการอุบัติเหตุ (แยกคอลัมน์ วัน / เดือน / ปี พ.ศ.) -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-slate-800">รายการรายงานอุบัติเหตุทั้งหมด</h2>
+          <p id="tableCount" class="text-xs text-slate-500">แสดง 0 รายการ</p>
+        </div>
+        <div class="relative w-full sm:w-72">
+          <input type="text" id="searchInput" oninput="renderTable()" placeholder="ค้นหาสายทาง, กม., เดือน, ปี, สาเหตุ..." class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 115 11a6 6 0 0112 0z"/></svg>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto custom-scroll">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="bg-slate-50 text-slate-600 text-xs uppercase border-b border-slate-200">
+              <th class="py-3 px-3 font-semibold text-center">วัน</th>
+              <th class="py-3 px-3 font-semibold">เดือน</th>
+              <th class="py-3 px-3 font-semibold text-center">ปี (พ.ศ.)</th>
+              <th class="py-3 px-4 font-semibold">แขวงทางหลวง</th>
+              <th class="py-3 px-4 font-semibold">สายทาง / ตอน / กม.</th>
+              <th class="py-3 px-3 font-semibold text-center">บาดเจ็บ</th>
+              <th class="py-3 px-3 font-semibold text-center">เสียชีวิต</th>
+              <th class="py-3 px-4 font-semibold text-right">เครื่องมือ</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody" class="divide-y divide-slate-100">
+            <tr><td colspan="8" class="py-10 text-center text-slate-400">กำลังโหลดข้อมูล...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- หน้าต่างป๊อปอัปดูรายละเอียดรายงานฉบับเต็ม -->
+  <div id="detailModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center p-4 z-50" onclick="if(event.target===this) closeModal()">
+    <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden">
+      <div class="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+        <div>
+          <h3 id="modalTitle" class="font-semibold text-base">รายละเอียดรายงานอุบัติเหตุ</h3>
+          <p id="modalSub" class="text-xs text-slate-300 mt-0.5"></p>
+        </div>
+        <button onclick="closeModal()" class="text-slate-300 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+      <div class="p-5 max-h-[70vh] overflow-y-auto custom-scroll">
+        <pre id="modalContent" class="whitespace-pre-wrap font-sans text-sm text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-200"></pre>
+        <div id="modalPhotos" class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2 hidden"></div>
+      </div>
+      <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+        <a id="modalMapBtn" href="#" target="_blank" class="hidden bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg font-medium">เปิดใน Google Maps</a>
+        <button onclick="closeModal()" class="bg-slate-200 hover:bg-slate-300 text-slate-800 text-sm px-4 py-2 rounded-lg font-medium">ปิดหน้าต่าง</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== สำหรับ GitHub Pages: วางลิงก์เว็บแอป URL (ลงท้ายด้วย /exec) ตรงนี้ =====
+    // (หากวางใน Apps Script ไฟล์ Index.html ระบบจะดึงข้อมูลตรงโดยอัตโนมัติ)
+    const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz4hu3fsAO-WLVUthAmfYCuwYS5-J_2zRE69FjUFCW87LktrEzYBu8J1piv4PtEutNb/exec";
+
+    const THAI_MONTHS_FULL = [
+      '', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+      'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+    ];
+    const THAI_MONTHS_SHORT = [
+      '', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+
+    let allData = [];
+    let filteredData = [];
+    let map = null;
+    let markersLayer = null;
+    let markerIndex = {};
+
+    function enrichDateParts(item) {
+      let day = '', month = '', year = '', time = '';
+
+      if (item.dateYMD && /^\d{4}-\d{2}-\d{2}/.test(item.dateYMD)) {
+        const p = item.dateYMD.split('-');
+        const yNum = parseInt(p[0], 10);
+        const mNum = parseInt(p[1], 10);
+        const dNum = parseInt(p[2], 10);
+        if (!isNaN(yNum)) year = String(yNum < 2400 ? yNum + 543 : yNum);
+        if (!isNaN(mNum)) month = String(mNum);
+        if (!isNaN(dNum)) day = String(dNum);
+      }
+
+      if (item.dateDisplay) {
+        const tMatch = String(item.dateDisplay).match(/(\d{1,2}:\d{2})/);
+        if (tMatch) time = tMatch[1];
+      }
+
+      const mIdx = parseInt(month, 10) || 0;
+      return Object.assign({}, item, {
+        _day: day,
+        _month: month,
+        _monthName: THAI_MONTHS_FULL[mIdx] || '',
+        _monthShort: THAI_MONTHS_SHORT[mIdx] || '',
+        _year: year,
+        _time: time,
+        _thaiDateText: (day && mIdx && year)
+          ? `${day} ${THAI_MONTHS_SHORT[mIdx]} ${year}${time ? ' ' + time + ' น.' : ''}`
+          : (item.dateDisplay || '-')
+      });
+    }
+
+    function isValidCoord(item) {
+      if (!item) return false;
+      if (item.lat === null || item.lat === undefined || item.lat === '') return false;
+      if (item.lng === null || item.lng === undefined || item.lng === '') return false;
+      const lat = Number(item.lat);
+      const lng = Number(item.lng);
+      return Number.isFinite(lat) && Number.isFinite(lng) &&
+             lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+    }
+
+    function initMap() {
+      const googleStreets = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxZoom: 20, attribution: 'Google Maps'
+      });
+      const googleHybrid = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 20, attribution: 'Google Satellite'
+      });
+
+      map = L.map('map', {
+        center: [16.12, 103.55],
+        zoom: 9,
+        layers: [googleStreets]
+      });
+
+      L.control.layers({ 'แผนที่ถนน': googleStreets, 'ภาพดาวเทียม': googleHybrid }).addTo(map);
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    function handleDataSuccess(data) {
+      allData = Array.isArray(data) ? data.map(enrichDateParts) : [];
+      populateDropdowns();
+      applyFilters();
+      const now = new Date();
+      document.getElementById('lastUpdate').textContent =
+        'อัปเดตล่าสุด ' + now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) + ' น.';
+    }
+
+    function handleDataError(err) {
+      const msg = (err && err.message) ? err.message : String(err || 'ไม่ทราบสาเหตุ');
+      document.getElementById('lastUpdate').textContent = 'โหลดข้อมูลไม่สำเร็จ';
+      document.getElementById('tableBody').innerHTML =
+        '<tr><td colspan="8" class="py-10 text-center text-red-500">ดึงข้อมูลไม่สำเร็จ: ' + escapeHtml(msg) + '</td></tr>';
+    }
+
+    // โหลดข้อมูลอัตโนมัติ (รองรับทั้ง Apps Script และ GitHub Pages)
+    function loadData() {
+      document.getElementById('lastUpdate').textContent = 'กำลังดึงข้อมูลล่าสุด...';
+
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        google.script.run
+          .withSuccessHandler(handleDataSuccess)
+          .withFailureHandler(handleDataError)
+          .getDashboardData();
+        return;
+      }
+
+      if (!WEB_APP_URL || WEB_APP_URL.indexOf('script.google.com') === -1) {
+        document.getElementById('lastUpdate').textContent = 'ยังไม่ได้ใส่ลิงก์เว็บแอป';
+        document.getElementById('tableBody').innerHTML =
+          '<tr><td colspan="8" class="py-10 text-center text-amber-600">กรุณาวางลิงก์เว็บแอป (/exec) ที่ตัวแปร WEB_APP_URL ในไฟล์ index.html ก่อนครับ</td></tr>';
+        return;
+      }
+
+      const sep = WEB_APP_URL.includes('?') ? '&' : '?';
+      fetch(WEB_APP_URL + sep + 'api=1&_t=' + Date.now())
+        .then(function(res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(handleDataSuccess)
+        .catch(handleDataError);
+    }
+
+    function populateDropdowns() {
+      const distSel = document.getElementById('filterDistrict');
+      const hwSel = document.getElementById('filterHighway');
+      const yearSel = document.getElementById('filterYear');
+      const monthSel = document.getElementById('filterMonth');
+      const daySel = document.getElementById('filterDay');
+
+      const prevDist = distSel.value;
+      const prevHw = hwSel.value;
+      const prevYear = yearSel.value;
+      const prevMonth = monthSel.value;
+      const prevDay = daySel.value;
+
+      const districts = [...new Set(allData.map(d => String(d.district || '').trim()).filter(Boolean))].sort();
+      const highways = [...new Set(allData.map(d => String(d.highway || '').trim()).filter(h => h && h !== 'ไม่ระบุ'))]
+        .sort((a, b) => (Number(a) || 0) - (Number(b) || 0) || a.localeCompare(b));
+      const years = [...new Set(allData.map(d => d._year).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
+
+      distSel.innerHTML = '<option value="">ทุกแขวงทางหลวง</option>' +
+        districts.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+      hwSel.innerHTML = '<option value="">ทุกสายทาง</option>' +
+        highways.map(v => `<option value="${escapeHtml(v)}">ทล.${escapeHtml(v)}</option>`).join('');
+      yearSel.innerHTML = '<option value="">ทุกปี</option>' +
+        years.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+
+      let monthOpts = '<option value="">ทุกเดือน</option>';
+      for (let m = 1; m <= 12; m++) {
+        monthOpts += `<option value="${m}">${THAI_MONTHS_FULL[m]}</option>`;
+      }
+      monthSel.innerHTML = monthOpts;
+
+      let dayOpts = '<option value="">ทุกวัน</option>';
+      for (let d = 1; d <= 31; d++) {
+        dayOpts += `<option value="${d}">${d}</option>`;
+      }
+      daySel.innerHTML = dayOpts;
+
+      distSel.value = prevDist;
+      hwSel.value = prevHw;
+      yearSel.value = prevYear;
+      monthSel.value = prevMonth;
+      daySel.value = prevDay;
+    }
+
+    function applyFilters() {
+      const dist = document.getElementById('filterDistrict').value;
+      const hw = document.getElementById('filterHighway').value;
+      const year = document.getElementById('filterYear').value;
+      const month = document.getElementById('filterMonth').value;
+      const day = document.getElementById('filterDay').value;
+
+      filteredData = allData.filter(item => {
+        if (dist && String(item.district || '').trim() !== dist) return false;
+        if (hw && String(item.highway || '').trim() !== hw) return false;
+        if (year && item._year !== year) return false;
+        if (month && item._month !== month) return false;
+        if (day && item._day !== day) return false;
+        return true;
+      });
+
+      try { renderKPIs(); } catch (e) { console.error('KPI error:', e); }
+      try { renderMap(); } catch (e) { console.error('Map error:', e); }
+      try { renderCharts(); } catch (e) { console.error('Chart error:', e); }
+      try { renderTable(); } catch (e) { console.error('Table error:', e); }
+    }
+
+    function resetFilters() {
+      document.getElementById('filterDistrict').value = '';
+      document.getElementById('filterHighway').value = '';
+      document.getElementById('filterYear').value = '';
+      document.getElementById('filterMonth').value = '';
+      document.getElementById('filterDay').value = '';
+      document.getElementById('searchInput').value = '';
+      applyFilters();
+    }
+
+    function renderKPIs() {
+      const total = filteredData.length;
+      const injured = filteredData.reduce((s, d) => s + (Number(d.injured) || 0), 0);
+      const fatalities = filteredData.reduce((s, d) => s + (Number(d.fatalities) || 0), 0);
+      const fatalCases = filteredData.filter(d => (Number(d.fatalities) || 0) > 0).length;
+      const withCoord = filteredData.filter(isValidCoord).length;
+
+      const hwCounts = {};
+      filteredData.forEach(d => {
+        const hw = String(d.highway || '').trim();
+        if (hw && hw !== 'ไม่ระบุ') {
+          hwCounts[hw] = (hwCounts[hw] || 0) + 1;
+        }
+      });
+      const topHwEntry = Object.entries(hwCounts).sort((a, b) => b[1] - a[1])[0];
+
+      document.getElementById('kpiTotal').textContent = total.toLocaleString();
+      document.getElementById('kpiWithCoord').textContent = `มีพิกัดแผนที่ ${withCoord} จุด`;
+      document.getElementById('kpiInjured').textContent = injured.toLocaleString();
+      document.getElementById('kpiFatalities').textContent = fatalities.toLocaleString();
+      document.getElementById('kpiFatalCases').textContent = `เหตุที่มีผู้เสียชีวิต ${fatalCases} ครั้ง`;
+      document.getElementById('kpiTopHw').textContent = topHwEntry ? `ทล.${topHwEntry[0]}` : '-';
+      document.getElementById('kpiTopHwCount').textContent = topHwEntry ? `เกิดเหตุ ${topHwEntry[1]} ครั้ง` : 'ยังไม่มีข้อมูล';
+    }
+
+    function renderMap() {
+      if (!map || !markersLayer) return;
+      markersLayer.clearLayers();
+      markerIndex = {};
+      const bounds = [];
+
+      filteredData.forEach((item, idx) => {
+        if (!isValidCoord(item)) return;
+        try {
+          const lat = Number(item.lat);
+          const lng = Number(item.lng);
+          const inj = Number(item.injured) || 0;
+          const fat = Number(item.fatalities) || 0;
+
+          let color = '#2563eb';
+          if (fat > 0) color = '#dc2626';
+          else if (inj > 0) color = '#f59e0b';
+
+          const marker = L.circleMarker([lat, lng], {
+            radius: fat > 0 ? 9 : 7,
+            fillColor: color,
+            color: '#ffffff',
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.92
+          });
+
+          const mapUrl = item.mapsLink || `https://www.google.com/maps?q=${lat},${lng}`;
+          const popupHtml = `
+            <div style="min-width:210px">
+              <div style="font-weight:600;color:#0f172a;font-size:13px;">ทล.${escapeHtml(item.highway)} ${item.km ? 'กม.' + escapeHtml(item.km) : ''}</div>
+              <div style="font-size:11px;color:#64748b;margin-bottom:6px;">${escapeHtml(item.district)} • ${escapeHtml(item._thaiDateText)}</div>
+              <div style="display:flex;gap:6px;margin-bottom:8px;font-size:11px;">
+                <span style="background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:99px;">บาดเจ็บ ${inj}</span>
+                <span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:99px;">เสียชีวิต ${fat}</span>
+              </div>
+              <div style="display:flex;gap:6px;">
+                <button onclick="openModalByIndex(${idx})" style="flex:1;background:#0f172a;color:#fff;border:none;padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer;">ดูรายงานเต็ม</button>
+                <a href="${escapeHtml(mapUrl)}" target="_blank" style="flex:1;text-align:center;background:#2563eb;color:#fff;text-decoration:none;padding:5px 8px;border-radius:6px;font-size:11px;">Google Maps</a>
+              </div>
+            </div>
+          `;
+
+          marker.bindPopup(popupHtml);
+          marker.addTo(markersLayer);
+          markerIndex[idx] = marker;
+          bounds.push([lat, lng]);
+        } catch (errMarker) {
+          console.error('Skip invalid marker at index', idx, errMarker);
+        }
+      });
+
+      try {
+        if (bounds.length === 1) {
+          map.setView(bounds[0], 14);
+        } else if (bounds.length > 1) {
+          map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        }
+      } catch (errBounds) {
+        console.error('fitBounds error:', errBounds);
+      }
+    }
+
+    function renderCharts() {
+      if (typeof Chart === 'undefined') return;
+
+      try {
+        const distMap = {};
+        filteredData.forEach(d => {
+          let key = String(d.district || 'ไม่ระบุแขวงฯ').replace(/แขวงทางหลวง/g, 'ขท.').trim() || 'ไม่ระบุ';
+          if (key.length > 22) key = key.slice(0, 22) + '…';
+          distMap[key] = (distMap[key] || 0) + 1;
+        });
+
+        const sortedDists = Object.entries(distMap).sort((a, b) => b[1] - a[1]);
+        const distLabels = sortedDists.map(e => e[0]);
+        const distVals = sortedDists.map(e => e[1]);
+
+        const oldDistChart = Chart.getChart('districtChart');
+        if (oldDistChart) oldDistChart.destroy();
+
+        new Chart(document.getElementById('districtChart'), {
+          type: 'doughnut',
+          data: {
+            labels: distLabels.length ? distLabels : ['ไม่มีข้อมูล'],
+            datasets: [{
+              data: distVals.length ? distVals : [1],
+              backgroundColor: distVals.length
+                ? ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#64748b']
+                : ['#e2e8f0'],
+              borderWidth: 2,
+              borderColor: '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { font: { family: 'Prompt', size: 11 }, boxWidth: 10, padding: 8 }
+              }
+            }
+          }
+        });
+      } catch (e1) {
+        console.error('districtChart error:', e1);
+      }
+
+      try {
+        const hwMap = {};
+        filteredData.forEach(d => {
+          const hw = String(d.highway || '').trim();
+          if (hw && hw !== 'ไม่ระบุ') {
+            const key = 'ทล.' + hw;
+            hwMap[key] = (hwMap[key] || 0) + 1;
+          }
+        });
+        const topHws = Object.entries(hwMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+        const oldHwChart = Chart.getChart('highwayChart');
+        if (oldHwChart) oldHwChart.destroy();
+
+        new Chart(document.getElementById('highwayChart'), {
+          type: 'bar',
+          data: {
+            labels: topHws.length ? topHws.map(e => e[0]) : ['ไม่มีข้อมูล'],
+            datasets: [{
+              label: 'จำนวนครั้ง',
+              data: topHws.length ? topHws.map(e => e[1]) : [0],
+              backgroundColor: '#3b82f6',
+              borderRadius: 6
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { beginAtZero: true, ticks: { precision: 0, font: { family: 'Prompt', size: 11 } } },
+              y: { ticks: { font: { family: 'Prompt', size: 11 } } }
+            }
+          }
+        });
+      } catch (e2) {
+        console.error('highwayChart error:', e2);
+      }
+    }
+
+    function renderTable() {
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const rows = filteredData.map((item, idx) => ({ item, idx })).filter(({ item }) => {
+        if (!q) return true;
+        const hay = `${item._day} ${item._monthName} ${item._monthShort} ${item._year} ${item._time} ${item.dateDisplay} ${item.district} ${item.highway} ${item.section} ${item.km} ${item.detail} ${item.address}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      document.getElementById('tableCount').textContent = `แสดง ${rows.length} รายการ`;
+      const tbody = document.getElementById('tableBody');
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-10 text-center text-slate-400">ไม่พบข้อมูลอุบัติเหตุตามเงื่อนไขที่เลือก</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows.map(({ item, idx }) => {
+        const hasCoord = isValidCoord(item);
+        const inj = Number(item.injured) || 0;
+        const fat = Number(item.fatalities) || 0;
+        return `
+          <tr class="hover:bg-blue-50/50 transition">
+            <td class="py-3 px-3 text-center whitespace-nowrap">
+              <div class="font-semibold text-slate-800">${escapeHtml(item._day || '-')}</div>
+              ${item._time ? `<div class="text-[11px] text-slate-400">${escapeHtml(item._time)}</div>` : ''}
+            </td>
+            <td class="py-3 px-3 whitespace-nowrap text-slate-700">${escapeHtml(item._monthName || '-')}</td>
+            <td class="py-3 px-3 text-center whitespace-nowrap text-slate-700">${escapeHtml(item._year || '-')}</td>
+            <td class="py-3 px-4 font-medium text-slate-800">${escapeHtml(item.district)}</td>
+            <td class="py-3 px-4">
+              <span class="font-semibold text-blue-700">ทล.${escapeHtml(item.highway)}</span>
+              ${item.section ? `<span class="text-xs text-slate-500 ml-1">ตอน ${escapeHtml(item.section)}</span>` : ''}
+              ${item.km ? `<div class="text-xs text-slate-500">กม.${escapeHtml(item.km)}</div>` : ''}
+            </td>
+            <td class="py-3 px-3 text-center">
+              <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${inj > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-400'}">
+                ${inj}
+              </span>
+            </td>
+            <td class="py-3 px-3 text-center">
+              <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${fat > 0 ? 'bg-red-100 text-red-700 font-bold' : 'bg-slate-100 text-slate-400'}">
+                ${fat}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-right whitespace-nowrap space-x-1.5">
+              ${hasCoord ? `<button onclick="focusMap(${idx})" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1.5 rounded-lg font-medium">ซูมหมุด</button>` : ''}
+              <button onclick="openModalByIndex(${idx})" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-lg font-medium">รายละเอียด${item.images && item.images.length ? ` (${item.images.length} รูป)` : ''}</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function exportExcel() {
+      if (typeof XLSX === 'undefined') {
+        alert('กำลังโหลดเครื่องมือส่งออก Excel กรุณาลองกดอีกครั้ง');
+        return;
+      }
+      if (filteredData.length === 0) {
+        alert('ไม่มีข้อมูลสำหรับส่งออกตามเงื่อนไขที่เลือก');
+        return;
+      }
+
+      const rows = filteredData.map((d, idx) => ({
+        'ลำดับ': idx + 1,
+        'วัน': d._day ? Number(d._day) : '',
+        'เดือน': d._monthName || '',
+        'ปี (พ.ศ.)': d._year ? Number(d._year) : '',
+        'เวลา': d._time || '',
+        'แขวงทางหลวง': d.district || '',
+        'สายทาง': d.highway || '',
+        'ตอนควบคุม': d.section || '',
+        'กม.': d.km || '',
+        'บาดเจ็บ (ราย)': Number(d.injured) || 0,
+        'เสียชีวิต (ราย)': Number(d.fatalities) || 0,
+        'Latitude': isValidCoord(d) ? Number(d.lat) : '',
+        'Longitude': isValidCoord(d) ? Number(d.lng) : '',
+        'ลิงก์ Google Maps': d.mapsLink || (isValidCoord(d) ? `https://www.google.com/maps?q=${d.lat},${d.lng}` : ''),
+        'รายละเอียด': d.detail || ''
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 8 }, { wch: 6 }, { wch: 14 }, { wch: 10 }, { wch: 8 },
+        { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+        { wch: 14 }, { wch: 14 }, { wch: 13 }, { wch: 13 }, { wch: 42 }, { wch: 55 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'สถิติอุบัติเหตุ');
+
+      const now = new Date();
+      const stamp = `${now.getFullYear() + 543}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      XLSX.writeFile(wb, `สถิติอุบัติเหตุ_สทล8_${stamp}.xlsx`);
+    }
+
+    function focusMap(idx) {
+      const m = markerIndex[idx];
+      if (!m || !map) return;
+      document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      map.flyTo(m.getLatLng(), 15, { duration: 0.8 });
+      setTimeout(() => m.openPopup(), 850);
+    }
+
+    function openModalByIndex(idx) {
+      const item = filteredData[idx];
+      if (!item) return;
+      document.getElementById('modalTitle').textContent = `ทล.${item.highway} ${item.km ? 'กม.' + item.km : ''} (${item.district})`;
+      document.getElementById('modalSub').textContent = `วันเกิดเหตุ: ${item._thaiDateText} • บาดเจ็บ ${Number(item.injured) || 0} ราย • เสียชีวิต ${Number(item.fatalities) || 0} ราย`;
+      document.getElementById('modalContent').textContent = item.detail || item.address || 'ไม่มีข้อความรายละเอียด';
+
+      const photosEl = document.getElementById('modalPhotos');
+      if (item.images && item.images.length > 0) {
+        photosEl.innerHTML = item.images.map(url => {
+          const m = String(url).match(/\/d\/([a-zA-Z0-9_-]+)/);
+          const thumb = m ? `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1000` : url;
+          return `<a href="${escapeHtml(url)}" target="_blank" class="block overflow-hidden rounded-lg border border-slate-200 hover:opacity-90">
+            <img src="${escapeHtml(thumb)}" alt="ภาพอุบัติเหตุ" class="w-full h-28 object-cover bg-slate-100" loading="lazy">
+          </a>`;
+        }).join('');
+        photosEl.classList.remove('hidden');
+      } else {
+        photosEl.innerHTML = '';
+        photosEl.classList.add('hidden');
+      }
+
+      const mapBtn = document.getElementById('modalMapBtn');
+      const link = item.mapsLink || (isValidCoord(item) ? `https://www.google.com/maps?q=${item.lat},${item.lng}` : '');
+      if (link) {
+        mapBtn.href = link;
+        mapBtn.classList.remove('hidden');
+      } else {
+        mapBtn.classList.add('hidden');
+      }
+
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('detailModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    try {
+      if (typeof L !== 'undefined') initMap();
+    } catch (e) {
+      console.error('Map init error:', e);
+    }
+    loadData();
+  </script>
+</body>
+</html>
